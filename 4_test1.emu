@@ -1,0 +1,22 @@
+# реализауия всех команд
+# !покдл vfs.csv
+
+vfs-info
+echo Это echo
+
+rev shrimp
+rev lala doo
+
+ls /docs
+ls /docs/doc1
+ls /docs/doc1/doc2
+
+ls /docs/t1.txt
+
+cd /docs
+ls
+cd /docs/doc1
+ls
+
+cd 
+ls /

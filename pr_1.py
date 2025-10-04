@@ -53,7 +53,9 @@ class Terminal:
             "ls": self.cmd_ls,
             "cd": self.cmd_cd,
             "exit": self.cmd_exit,
-            "vfs-info": self.cmd_vfs_info
+            "vfs-info": self.cmd_vfs_info,
+            "echo": self.cmd_echo,
+            "rev": self.cmd_rev
         }
 
 
@@ -144,25 +146,78 @@ class Terminal:
 
 
             
-    # команда ls
+    # команда ls показать содержимое папки
     def cmd_ls(self, arg):
-    
-        text = "команда ls вызвана"
-        if arg:
-            text += " с аргументами: " + " ".join(arg)
-        return True, text
+        # без арг содержимое тек папки
+        # пуь на файл имя и размер
+        # путь на папку непоср дети
 
-    # команда cd
+        # арг или тек папка
+        target = arg[0] if arg else "."
+
+        ap = str(self._abs_path(target))
+
+        node = self.vfs.get(ap)
+        if not node:
+            return False, f"ls: нет такого пути: {ap}"
+
+        # файл
+        if node["type"] == "file":
+            name = PurePosixPath(ap).name
+            size = len(node["content"])
+            return True, f"{name}\t{size} B"
+
+        # папка
+        prefix = "" if ap == "/" else ap
+        items = []
+        for path, meta in self.vfs.items():
+            if path == ap:
+                continue
+            if path.startswith(prefix + "/"):
+                tail = path[len(prefix) + 1:] 
+                if "/" not in tail:           # только прямые дети
+                    items.append(tail + ("/" if meta["type"] == "dir" else ""))
+
+        items.sort()
+        return True, ("\n".join(items) if items else "(пусто)")
+
+
+
+
+    # команда cd перейти в др дир
     def cmd_cd(self, arg):
+        # без арг домой
         if not arg:
-            return True, "команда cd: путь не указан"
-        else:
-            return True, f"команда cd: перешёл в {arg[0]}"
+            self.cwd = PurePosixPath("/")
+            return True, "cd: /"
+
+        ap = self._abs_path(arg[0])
+        meta = self.vfs.get(str(ap))
+
+        if not meta:
+            return False, f"cd: нет такого пути: {ap}"
+        if meta["type"] != "dir":
+            return False, f"cd: не папка: {ap}"
+
+        self.cwd = ap
+        return True, f"cd: {ap}"
+
+        
     # команда exit
     def cmd_exit(self, arg):
         self.root.after(100, self.root.destroy)
         return True, "конец работы"
     
+    # команда echo простой вывод что передано
+    def cmd_echo(self, arg):
+        return True, " ".join(arg)
+        
+    # команда rev переворот строки
+    def cmd_rev(self, arg):
+        if not arg:
+            return True, ""
+        return True, " ".join(word[::-1] for word in arg)
+
 
     # реализация команды vfs -info
     def cmd_vfs_info(self, arg):
