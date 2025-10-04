@@ -1,0 +1,8 @@
+type,path,info
+dir,/,
+dir,/docs,
+dir,/docs/doc1,
+dir,/docs/doc1/doc2,
+file,/docs/t1.txt,0YLQtdC60YHRgg==
+file,/docs/doc1/t2.txt,0YLQtdC60YHRgg==
+file,/docs/doc1/doc2/t3.txt,0YLQtdC60YHRgg==

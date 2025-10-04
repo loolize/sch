@@ -7,6 +7,10 @@ import socket # модуль чтобы узнать имя компьютера
 import argparse # для чтения аргументов команд строки
 from pathlib import Path # для удобства с путями
 
+import csv # таблицы
+import base64 
+import hashlib # для SHA-256
+from pathlib import PurePosixPath # для аккуратного склеиваня путей внутри vfs
 
 # глобальные константы для приглашения
 user = getpass.getuser()
@@ -22,6 +26,10 @@ class Terminal:
         self.script_path: Path | None = script_path
 
 
+        # структура для хранения vfs
+        self.vfs = {} # путь - описание 
+        self.vfs_sha = None
+        self.cwd = PurePosixPath("/") # текущая директория 
 
         # многострочный вывод
         self.out = tk.Text(root, height = 14, width = 50, state = "disabled")
@@ -45,6 +53,7 @@ class Terminal:
             "ls": self.cmd_ls,
             "cd": self.cmd_cd,
             "exit": self.cmd_exit,
+            "vfs-info": self.cmd_vfs_info
         }
 
 
@@ -55,14 +64,22 @@ class Terminal:
 
         # проверка существования путей
         if self.vfs_path and not self.vfs_path.exists():
-            self.print_line(f"путь VFS не найден: {self.vfs_path}")
+            self.print_line(f"путь vfs не найден: {self.vfs_path}")
         if self.script_path and not self.script_path.exists():
             self.print_line(f"скрипт не найден: {self.script_path}")
+
+        # загружаеме пути в памяь
+        if self.vfs_path:
+            ok = self.load_vfs(self.vfs_path)
+            if ok:
+                self.print_line(f"загружено: {self.vfs_path.name}")
+            else:
+                self.print_line("загрузка не удалась")
 
 
 
         # приветствие 
-        self.print_line("Возможные команды: ls, cd, exit")
+        self.print_line("возможные команды: ls, cd, exit, vfs-info")
         self.show_begin()
 
 
@@ -127,8 +144,7 @@ class Terminal:
 
 
             
-
-    # заглушки
+    # команда ls
     def cmd_ls(self, arg):
     
         text = "команда ls вызвана"
@@ -136,16 +152,108 @@ class Terminal:
             text += " с аргументами: " + " ".join(arg)
         return True, text
 
+    # команда cd
     def cmd_cd(self, arg):
         if not arg:
             return True, "команда cd: путь не указан"
         else:
             return True, f"команда cd: перешёл в {arg[0]}"
-
+    # команда exit
     def cmd_exit(self, arg):
         self.root.after(100, self.root.destroy)
         return True, "конец работы"
     
+
+    # реализация команды vfs -info
+    def cmd_vfs_info(self, arg):
+        if not self.vfs_sha or not self.vfs_path:
+            return True, "vfs не загружен"
+        # сколько узлов, сколько файлов/папок
+        total = len(self.vfs)
+        files = sum(1 for v in self.vfs.values() if v["type"] == "file")
+        dirs  = sum(1 for v in self.vfs.values() if v["type"] == "dir")
+        info = [
+            f"VFS файл: {self.vfs_path}",
+            f"SHA-256: {self.vfs_sha}",
+            f"Объектов: {total} (файлов: {files}, папок: {dirs})",
+        ]
+        return True, "\n".join(info)
+
+
+
+    # нормализация путей vfs
+    def _abs_path(self, raw: str) -> PurePosixPath: #(в стиле позикс с /)
+        p = PurePosixPath(raw)
+        if not p.is_absolute():      # относительный, абсолютный путь с  /
+            p = self.cwd / p        # приклеили к тек директории
+        s = "/" + str(p).lstrip("/") # все ведущ / удаляем и один доб в нач
+        return PurePosixPath(s)
+
+
+
+    # чтение vfs из csv
+    def load_vfs(self, csv_path: Path) -> bool:
+        # сброс предсостояния
+        self.vfs.clear()
+        self.vfs_sha = None
+        self.cwd = PurePosixPath("/")
+
+        # читаем как байты
+        try:
+            raw = csv_path.read_bytes()
+        except FileNotFoundError:
+            self.print_line(f"vfs файл не найден: {csv_path}")
+            return False
+        except Exception as e:
+            self.print_line(f"не удалось прочитать vfs: {e}")
+            return False
+        # счет sha по байтам
+        self.vfs_sha = hashlib.sha256(raw).hexdigest()
+
+
+        # декодируем в текст
+        text = raw.decode("utf-8")
+
+        # разбор csv в словари
+        reader = csv.DictReader(text.splitlines()) # каждая строка в солварь
+        need = {"type", "path", "info"} # обязатеьные колонки
+        if not need.issubset(set(reader.fieldnames or [])): # все ли эл-ты внутри имен
+            self.print_line(f"не тот формат csv")
+            return False
+
+        try:
+            for i, row in enumerate(reader, start = 2):  # 1 строка заголовок
+                t = (row.get("type") or "").strip().lower()
+                p = (row.get("path") or "").strip()
+                inf = row.get("info") or ""
+
+                if t not in {"dir", "file"} or not p:
+                    self.print_line(f"пустой path/type / неизвестный тип='{t}'")
+                    return False
+
+                # абсолютный позикс
+                ap = str(self._abs_path(p))
+
+                if t == "dir":
+                    self.vfs[ap] = {"type": "dir"}
+                else:
+                    # base64 / обычный текст, в self.vfs всегда биты
+                    try:
+                        data = base64.b64decode(inf, validate=True)  # если base64 декодируем
+                        
+                    except Exception:
+                        data = inf.encode("utf-8", errors="replace")
+                    self.vfs[ap] = {"type": "file", "content": data}
+
+            # корень / как папка
+            self.vfs.setdefault("/", {"type": "dir"})
+
+            return True
+        
+        except Exception as e:
+            self.print_line(f"ошибка csv: {e}")
+            return False
+
 
 
 

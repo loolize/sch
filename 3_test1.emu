@@ -1,0 +1,5 @@
+vfs-info
+ls 
+cd /docs
+ls /docs
+cd /docs/doc1
