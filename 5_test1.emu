@@ -1,0 +1,43 @@
+# просто реализайия всех команд
+
+vfs-info
+echo Это echo
+
+rev shrimp
+rev lala doo
+
+ls /
+ls /docs
+ls /docs/doc1
+ls /docs/doc1/doc2
+ls /docs/t1.txt
+
+
+cd /docs
+ls
+cd /docs/doc1
+ls
+cd /docs/doc1/doc2
+ls
+cd
+ls /
+
+
+# меняем права
+# убрали доступ
+chmod 600 /docs/t1.txt 
+chmod 755 /docs/doc1
+
+# удаляем файл, проверяем содержимое 
+rm /docs/t1.txt
+ls /docs
+
+# rm -r: рекурсивно удаляем 
+rm -r /docs/doc1
+ls /docs
+
+# rm -r текущей рабочей директории (должны вернуться в /)
+cd /docs
+rm -r /docs
+ls /
+

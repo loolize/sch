@@ -55,7 +55,9 @@ class Terminal:
             "exit": self.cmd_exit,
             "vfs-info": self.cmd_vfs_info,
             "echo": self.cmd_echo,
-            "rev": self.cmd_rev
+            "rev": self.cmd_rev,
+            "rm": self.cmd_rm,
+            "chmod": self.cmd_chmod
         }
 
 
@@ -81,11 +83,11 @@ class Terminal:
 
 
         # приветствие 
-        self.print_line("возможные команды: ls, cd, exit, vfs-info")
+        self.print_line("возможные команды: ls, cd, exit, vfs-info, rm, echo, chmod")
         self.show_begin()
 
 
-        # автоматич запуск скрипта если задан
+        # автоматич запуск скрипта
         if self.script_path and self.script_path.exists():
             self.root.after(0, self.run_start_script)
 
@@ -111,7 +113,7 @@ class Terminal:
         
 
 
-    # выполнение одной строки
+    # обработка одной строки
     def exec_line(self, line: str, show: bool) -> bool: # нужно ли показываьтт команду
         line = line.strip() # - лишние пробелы
         if not line:
@@ -290,7 +292,7 @@ class Terminal:
                 ap = str(self._abs_path(p))
 
                 if t == "dir":
-                    self.vfs[ap] = {"type": "dir"}
+                    self.vfs[ap] = {"type": "dir", "mode": 0O755} # права изменения только у владельца
                 else:
                     # base64 / обычный текст, в self.vfs всегда биты
                     try:
@@ -298,7 +300,7 @@ class Terminal:
                         
                     except Exception:
                         data = inf.encode("utf-8", errors="replace")
-                    self.vfs[ap] = {"type": "file", "content": data}
+                    self.vfs[ap] = {"type": "file", "content": data, "mode":0o644} 
 
             # корень / как папка
             self.vfs.setdefault("/", {"type": "dir"})
@@ -309,6 +311,96 @@ class Terminal:
             self.print_line(f"ошибка csv: {e}")
             return False
 
+
+    # для удаления вспомогаоки чтоюы найти вложенные
+    # непоср дети
+    def child_of(self, dir_path: str) -> list[str]:
+        prefix = "" if dir_path == "/" else dir_path
+        kids = []
+        for p in self.vfs.keys():
+            if p == dir_path:
+                continue
+            if p.startswith(prefix + "/"):
+                tail = p[len(prefix) + 1:]
+                if "/" not in tail:
+                    kids.append(p)
+        return kids
+
+
+    # все пути внутри включая корень начиная с детей
+    def subtree_of(self, root_path: str) -> list[str]:
+        nodes = [p for p in self.vfs.keys() if p == root_path or p.startswith((root_path.rstrip("/") + "/"))]
+        nodes.sort(key=len, reverse=True)
+        return nodes
+
+
+
+
+    # команда rm
+    def cmd_rm(self, args):
+        # rm -r file удаление файла с подчиненными
+        if not args:
+            return False, "rm: путь не указан"
+
+        recursive = False
+        targets = []
+
+        # -r
+        for a in args:
+            if a == "-r":
+                recursive = True
+            else:
+                targets.append(a)
+
+        if len(targets) != 1:
+            return False, "rm: укажите ровно один путь"
+
+        ap = str(self._abs_path(targets[0]))
+        node = self.vfs.get(ap)
+        if not node:
+            return False, f"rm: нет такого пути: {ap}"
+
+        if node["type"] == "file":
+            # удаляем файл
+            del self.vfs[ap]
+            return True, f"rm: удалён файл {ap}"
+
+        if not recursive:
+            return False, f"rm: {ap}: это каталог (используйте -r)"
+        # не удаляем корень
+        if ap == "/":
+            return False, "rm: нельзя удалить корень '/'"
+        # удаляем детец
+        for p in self.subtree_of(ap):
+            del self.vfs[p]
+        # возвращение в корень
+        if str(self.cwd).startswith(ap.rstrip("/") + "/") or str(self.cwd) == ap:
+            self.cwd = PurePosixPath("/")
+
+        return True, f"rm: удалён каталог {ap}"
+
+
+
+    # команда chmod смена прав доступа
+    def cmd_chmod(self, args):
+        if len(args) != 2:
+            return False, "chmod: требуется mode и path"
+
+        mode_str, path_str = args
+        try:
+            # восьм в инт
+            mode_val = int(mode_str, 8)
+        except ValueError:
+            return False, f"chmod: неверный mode: {mode_str}"
+
+        ap = str(self._abs_path(path_str))
+        node = self.vfs.get(ap)
+        if not node:
+            return False, f"chmod: нет такого пути: {ap}"
+        # новые права
+        node["mode"] = mode_val
+        # возврат в читаьельном ыиде
+        return True, f"chmod: {ap} - {mode_str}"
 
 
 
